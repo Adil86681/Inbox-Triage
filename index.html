@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inbox Triage</title>
+<style>
+  :root {
+    --bg: #f0f7ff;
+    --card: #ffffff;
+    --primary: #2563eb;
+    --primary-light: #dbeafe;
+    --primary-dark: #1e40af;
+    --accent: #3b82f6;
+    --text: #1e293b;
+    --text-muted: #64748b;
+    --border: #bfdbfe;
+    --success: #10b981;
+    --shadow: 0 1px 3px rgba(37, 99, 235, 0.08), 0 4px 12px rgba(37, 99, 235, 0.04);
+    --shadow-hover: 0 4px 16px rgba(37, 99, 235, 0.12), 0 8px 24px rgba(37, 99, 235, 0.06);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* Top bar */
+  .topbar {
+    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%);
+    padding: 16px 28px;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .topbar-title { font-size: 18px; font-weight: 700; letter-spacing: -0.2px; display: flex; align-items: center; gap: 10px; }
+  .topbar-title .logo { font-size: 22px; }
+  .topbar-right { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+  .user-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.2); backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 20px; padding: 6px 14px; font-weight: 500;
+  }
+  .user-chip .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #4ade80; box-shadow: 0 0 0 3px rgba(74,222,128,0.3);
+  }
+  .signout-btn {
+    background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
+    color: white; font-size: 12px; font-weight: 500; padding: 6px 12px;
+    border-radius: 6px; cursor: pointer; font-family: inherit;
+  }
+  .signout-btn:hover { background: rgba(255,255,255,0.25); }
+
+  /* Landing (signed-out) */
+  .landing {
+    max-width: 460px; margin: 80px auto 40px; padding: 40px 32px;
+    background: var(--card); border-radius: 16px; box-shadow: var(--shadow);
+    border: 1px solid var(--border); text-align: center;
+  }
+  .landing h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+  .landing p { color: var(--text-muted); font-size: 14px; margin-bottom: 28px; line-height: 1.5; }
+  .google-signin-btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: var(--primary); color: white;
+    font-family: inherit; font-size: 14px; font-weight: 600;
+    padding: 12px 22px; border: 0; border-radius: 8px; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .google-signin-btn:hover { background: var(--primary-dark); }
+  .google-signin-btn svg { width: 18px; height: 18px; }
+  .landing-note { font-size: 12px; color: var(--text-muted); margin-top: 20px; }
+
+  /* App view */
+  .app-view { display: none; max-width: 1500px; margin: 0 auto; padding: 20px 28px 40px; }
+  .app-view.visible { display: block; }
+
+  /* Triage card */
+  .triage-card {
+    background: var(--card); border-radius: 16px; box-shadow: var(--shadow);
+    border: 1px solid var(--border); overflow: hidden;
+  }
+  .triage-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 22px 14px; border-bottom: 1px solid #e8f0fe;
+  }
+  .triage-card-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .triage-card-title .icon {
+    width: 32px; height: 32px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; background: #dcfce7;
+  }
+  .card-badge { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+
+  /* Triage grid */
+  .triage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0; border-top: 1px solid var(--border); }
+  .triage-col { padding: 14px 18px; border-right: 1px solid var(--border); }
+  .triage-col:last-child { border-right: 0; }
+  .triage-col-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
+  .triage-col-header:hover .triage-col-title { text-decoration: underline; }
+  .triage-col-chevron { margin-left: auto; font-size: 10px; color: var(--text-muted); transition: transform 0.15s; }
+  .triage-col.collapsed .triage-col-chevron { transform: rotate(-90deg); }
+  .triage-col.collapsed .triage-col-body { display: none; }
+  .triage-col.collapsed { padding-bottom: 10px; }
+  .triage-col-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+  .triage-col-count { font-size: 11px; padding: 1px 7px; border-radius: 10px; font-weight: 600; }
+  .triage-item { position: relative; padding: 9px 10px; border-radius: 8px; margin-bottom: 6px; border: 1px solid transparent; cursor: pointer; transition: background 0.12s, box-shadow 0.12s; }
+  .triage-item:hover { background: var(--primary-light); box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .triage-sender { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 70px; }
+  .triage-subject { font-size: 12px; color: var(--text); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .triage-summary { font-size: 11px; color: var(--text-muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .triage-summary.ai { color: var(--text); font-style: italic; border-left: 2px solid #a78bfa; padding-left: 6px; }
+  .triage-empty { font-size: 12px; color: var(--text-muted); padding: 8px 0; font-style: italic; }
+  .triage-item[draggable="true"] { cursor: grab; }
+  .triage-item[draggable="true"]:active { cursor: grabbing; }
+  .triage-item.dragging { opacity: 0.35; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  .triage-col.drag-over > .triage-col-body { outline: 2px dashed #6366f1; background: rgba(99,102,241,0.05); border-radius: 6px; min-height: 40px; }
+  .triage-pinned-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #6366f1; margin-left: 4px; vertical-align: middle; }
+  .triage-actions { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; background: rgba(255,255,255,0.92); border-radius: 6px; padding: 2px; }
+  .triage-item:hover .triage-actions { opacity: 1; }
+  .triage-actions button { background: transparent; border: 0; cursor: pointer; font-size: 13px; padding: 3px 5px; border-radius: 4px; line-height: 1; color: var(--text-muted); font-family: inherit; }
+  .triage-actions button:hover { background: var(--primary-light); color: var(--primary-dark); }
+  .triage-actions button.ai-btn:hover { background: #ede9fe; color: #6d28d9; }
+  .triage-actions button.complete-btn:hover { background: #d1fae5; color: #065f46; }
+  .triage-actions button.archive-btn:hover { background: #fef3c7; color: #92400e; }
+  .triage-actions button.snooze-btn:hover { background: #e0e7ff; color: #3730a3; }
+  .triage-snooze-menu { position: absolute; top: 30px; right: 6px; background: #fff; border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); padding: 4px; z-index: 20; min-width: 140px; }
+  .triage-snooze-menu button { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 6px 10px; font-size: 12px; cursor: pointer; border-radius: 4px; font-family: inherit; color: var(--text); }
+  .triage-snooze-menu button:hover { background: var(--primary-light); }
+  .triage-completed-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 3px 10px; border-radius: 12px; background: #d1fae5; color: #065f46; border: 0; cursor: pointer; font-family: inherit; font-weight: 600; }
+  .triage-completed-pill:hover { background: #a7f3d0; }
+  .ai-spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid #ddd; border-top-color: #7c3aed; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Loading / empty states */
+  .card-loading { display: flex; align-items: center; justify-content: center; padding: 40px 22px; gap: 10px; color: var(--text-muted); font-size: 13px; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  .empty-state { padding: 32px 22px; text-align: center; }
+  .empty-state .emoji { font-size: 36px; margin-bottom: 10px; }
+  .empty-state .title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .empty-state .subtitle { font-size: 13px; color: var(--text-muted); }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--text); color: white; padding: 10px 18px; border-radius: 8px;
+    font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+    opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 100;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- ───────────────── TOP BAR ───────────────── -->
+<div class="topbar">
+  <div class="topbar-title">
+    <span class="logo">&#128236;</span>
+    <span>Inbox Triage</span>
+  </div>
+  <div class="topbar-right" id="topbarRight">
+    <!-- Filled in once signed in -->
+  </div>
+</div>
+
+<!-- ───────────────── LANDING (signed-out) ───────────────── -->
+<div class="landing" id="landing">
+  <h1>Sign in to triage your inbox</h1>
+  <p>Connect your Google account and we'll sort the last 7 days of mail into Urgent, Action Needed, Mentioned, FYI, Automated, and Marketing.</p>
+  <button class="google-signin-btn" onclick="connectGoogle()">
+    <svg viewBox="0 0 24 24" fill="white"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+    Sign in with Google
+  </button>
+  <div class="landing-note">Your inbox stays in your browser. Triage state is stored locally per Google account.</div>
+</div>
+
+<!-- ───────────────── APP VIEW (signed-in) ───────────────── -->
+<div class="app-view" id="appView">
+  <div class="triage-card">
+    <div class="triage-card-header">
+      <div class="triage-card-title">
+        <div class="icon">&#128236;</div>
+        <span>Your inbox, sorted</span>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <span class="card-badge" id="emailBadge" style="background:var(--primary-light);color:var(--primary-dark);">Loading...</span>
+        <button id="triageBtn" onclick="runInboxTriage()" style="padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--primary);background:var(--primary-light);color:var(--primary-dark);font-family:inherit;">&#9654; Run Triage</button>
+      </div>
+    </div>
+    <div id="emailCardBody" style="padding:0;">
+      <div class="card-loading"><div class="spinner"></div> Loading inbox...</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ============================================================
+  // SESSION STATE
+  // ============================================================
+  var googleSession = {
+    connected: false,
+    accessToken: null,
+    email: null,   // The signed-in user's email — set after OAuth
+  };
+
+  var triageState = {
+    buckets: null,
+    lastRunAt: null,
+    scannedCount: 0,
+    showCompleted: false,
+  };
+
+  // localStorage keys are namespaced by user email so multiple
+  // Google accounts in the same browser don't clobber each other.
+  // Call triageKey() AFTER googleSession.email is populated.
+  function triageKey(suffix) {
+    var prefix = googleSession.email ? 'triage.' + googleSession.email + '.' : 'triage.';
+    return prefix + suffix;
+  }
+  // OpenAI API key is shared per browser (each user supplies their own).
+  var OPENAI_KEY_KEY = 'inboxTriage.openai.apiKey';
+
+  // ============================================================
+  // UTILITIES
+  // ============================================================
+  function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function showToast(message) {
+    var toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.classList.add('show');
+    setTimeout(function() { toast.classList.remove('show'); }, 2800);
+  }
+
+  function decodeB64Url(s) {
+    try {
+      var b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      return decodeURIComponent(escape(atob(b64)));
+    } catch(e) { return ''; }
+  }
+
+  // ============================================================
+  // GOOGLE OAUTH
+  // ============================================================
+  function connectGoogle() {
+    var popup = window.open('/api/google/auth', 'google-auth', 'width=500,height=650,left=200,top=100');
+    if (!popup) showToast('Popup blocked — please allow popups for this site.');
+  }
+
+  window.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'google-auth-success') {
+      googleSession.accessToken = event.data.access_token;
+      onSignedIn();
+    } else if (event.data && event.data.type === 'google-auth-error') {
+      showToast('Google auth failed: ' + event.data.error);
+    }
+  });
+
+  // Called after we have a valid access token. Looks up the user's email
+  // via the Gmail profile endpoint (no extra scopes needed) and then runs
+  // the first triage.
+  async function onSignedIn() {
+    try {
+      var r = await fetch('https://www.googleapis.com/gmail/v1/users/me/profile', {
+        headers: { Authorization: 'Bearer ' + googleSession.accessToken }
+      });
+      if (!r.ok) throw new Error('Could not load Gmail profile: ' + r.status);
+      var profile = await r.json();
+      googleSession.email = profile.emailAddress;
+      googleSession.connected = true;
+
+      // Swap UI
+      document.getElementById('landing').style.display = 'none';
+      document.getElementById('appView').classList.add('visible');
+      renderTopbarSignedIn();
+
+      // Run triage immediately
+      runInboxTriage();
+    } catch (err) {
+      showToast(err.message);
+    }
+  }
+
+  function renderTopbarSignedIn() {
+    var right = document.getElementById('topbarRight');
+    right.innerHTML =
+      '<span class="user-chip"><span class="dot"></span>' + escapeHtml(googleSession.email) + '</span>' +
+      '<button class="signout-btn" onclick="signOut()">Sign out</button>';
+  }
+
+  function signOut() {
+    googleSession = { connected: false, accessToken: null, email: null };
+    triageState = { buckets: null, lastRunAt: null, scannedCount: 0, showCompleted: false };
+    document.getElementById('appView').classList.remove('visible');
+    document.getElementById('landing').style.display = 'block';
+    document.getElementById('topbarRight').innerHTML = '';
+  }
+
+  // ============================================================
+  // TRIAGE STATE HELPERS (localStorage)
+  // ============================================================
+  function triageLoadSet(key) {
+    try { return new Set(JSON.parse(localStorage.getItem(key) || '[]')); } catch(e) { return new Set(); }
+  }
+  function triageSaveSet(key, s) { localStorage.setItem(key, JSON.stringify(Array.from(s))); }
+  function triageLoadMap(key) {
+    try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch(e) { return {}; }
+  }
+  function triageSaveMap(key, m) { localStorage.setItem(key, JSON.stringify(m)); }
+
+  function triageGetCompleted()   { return triageLoadSet(triageKey('completed')); }
+  function triageGetSnoozed()     { return triageLoadMap(triageKey('snoozed')); }
+  function triageGetCollapsed()   { return triageLoadSet(triageKey('collapsed')); }
+  function triageGetAiSummaries() { return triageLoadMap(triageKey('aiSummaries')); }
+  function triageGetPinned()      { return triageLoadMap(triageKey('pinned')); }
+  function triageSavePinned(m)    { triageSaveMap(triageKey('pinned'), m); }
+
+  // ============================================================
+  // INBOX TRIAGE — fetch + categorise + render
+  // ============================================================
+  async function runInboxTriage() {
+    if (!googleSession.connected || !googleSession.accessToken) {
+      showToast('Sign in first.');
+      return;
+    }
+    var container = document.getElementById('emailCardBody');
+    container.innerHTML = '<div class="card-loading"><div class="spinner"></div> Triaging inbox...</div>';
+
+    try {
+      var listResp = await fetch(
+        'https://www.googleapis.com/gmail/v1/users/me/messages?q=in:inbox+newer_than:7d&maxResults=40',
+        { headers: { Authorization: 'Bearer ' + googleSession.accessToken } }
+      );
+      if (!listResp.ok) throw new Error('Gmail list failed: ' + listResp.status);
+      var listData = await listResp.json();
+      var msgList = listData.messages || [];
+
+      if (msgList.length === 0) {
+        var badge = document.getElementById('emailBadge');
+        badge.textContent = 'Inbox Zero!';
+        badge.style.background = '#d1fae5'; badge.style.color = '#065f46';
+        container.innerHTML = '<div class="empty-state"><div class="emoji">&#127881;</div><div class="title">Inbox Zero!</div><div class="subtitle">No emails in the past 7 days.</div></div>';
+        triageState.buckets = { urgent:[], action:[], mentioned:[], fyi:[], automated:[], marketing:[] };
+        triageState.scannedCount = 0;
+        return;
+      }
+
+      var fetchMeta = function(id) {
+        return fetch(
+          'https://www.googleapis.com/gmail/v1/users/me/messages/' + id +
+          '?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject',
+          { headers: { Authorization: 'Bearer ' + googleSession.accessToken } }
+        ).then(function(r) { return r.json(); });
+      };
+
+      var metaBatch = await Promise.all(msgList.slice(0, 40).map(function(m) { return fetchMeta(m.id); }));
+
+      // Dynamic per-user "my emails" — replaces the previous hardcoded list.
+      var MY_EMAILS = [googleSession.email.toLowerCase()];
+
+      function getHeader(msg, name) {
+        var headers = (msg.payload && msg.payload.headers) ? msg.payload.headers : [];
+        var h = headers.find(function(h) { return h.name.toLowerCase() === name.toLowerCase(); });
+        return h ? h.value : '';
+      }
+
+      function senderName(from) {
+        var m = from.match(/^"?(.+?)"?\s*</);
+        if (m) return m[1].replace(/^"+|"+$/g, '').trim();
+        return from.replace(/<.*>/, '').trim() || from;
+      }
+
+      function categorise(msg) {
+        var labels  = msg.labelIds || [];
+        var from    = getHeader(msg, 'From').toLowerCase();
+        var to      = getHeader(msg, 'To').toLowerCase();
+        var cc      = getHeader(msg, 'Cc').toLowerCase();
+        var subject = getHeader(msg, 'Subject').toLowerCase();
+        var snippet = (msg.snippet || '').toLowerCase();
+
+        var isDirectTo = MY_EMAILS.some(function(e) { return to.includes(e); });
+        var isCCd      = MY_EMAILS.some(function(e) { return cc.includes(e); }) && !isDirectTo;
+
+        var isAuto = labels.includes('CATEGORY_UPDATES') ||
+                     from.includes('no-reply') || from.includes('noreply') ||
+                     from.includes('notifications@') || from.includes('automated');
+
+        var isMarketing = labels.includes('CATEGORY_PROMOTIONS') || labels.includes('CATEGORY_SOCIAL') ||
+                          (!isDirectTo && !isCCd && !isAuto && (
+                            snippet.includes('unsubscribe') || subject.includes('newsletter') ||
+                            subject.includes('offer') || subject.includes('sale') ||
+                            from.includes('marketing') || from.includes('hello@')
+                          ));
+
+        if (isMarketing) return 'marketing';
+        if (isAuto)      return 'automated';
+
+        var isJiraMention = from.includes('jira@') && (subject.includes('mentioned you') || snippet.includes('mentioned you'));
+        if (isJiraMention) return 'mentioned';
+
+        var actionKeywords = ['required','please','action','urgent','approval','asap','deadline','by eod','by cob','needs your','can you','could you','need your','follow up','follow-up'];
+        var isUrgent = isDirectTo && actionKeywords.some(function(k) { return subject.includes(k) || snippet.includes(k); });
+        if (isUrgent) return 'urgent';
+
+        if (isDirectTo) return 'action';
+        if (isCCd)      return 'fyi';
+        return 'fyi';
+      }
+
+      function buildSummary(msg) {
+        return (msg.snippet || '').replace(/[​-‏﻿]/g, '').replace(/\s+/g, ' ').trim().substring(0, 180);
+      }
+
+      var buckets = { urgent: [], action: [], mentioned: [], fyi: [], automated: [], marketing: [] };
+      var _pinned = triageGetPinned();
+
+      metaBatch.forEach(function(msg) {
+        if (!msg || !msg.id) return;
+        var cat = _pinned[msg.id] || categorise(msg);
+        if (!buckets[cat]) buckets[cat] = [];
+        buckets[cat].push({
+          id:       msg.id,
+          threadId: msg.threadId || msg.id,
+          from:     senderName(getHeader(msg, 'From')),
+          subject:  getHeader(msg, 'Subject') || '(No subject)',
+          summary:  buildSummary(msg),
+        });
+      });
+
+      triageState.buckets = buckets;
+      triageState.scannedCount = msgList.length;
+      triageState.lastRunAt = new Date();
+      renderTriage();
+
+    } catch (err) {
+      container.innerHTML = '<div class="empty-state"><div class="emoji">&#9888;&#65039;</div><div class="title">Triage failed</div><div class="subtitle">' + escapeHtml(err.message) + '</div></div>';
+    }
+  }
+
+  function renderTriage() {
+    var container = document.getElementById('emailCardBody');
+    var badge     = document.getElementById('emailBadge');
+    if (!triageState.buckets) return;
+
+    var completed   = triageGetCompleted();
+    var snoozed     = triageGetSnoozed();
+    var collapsed   = triageGetCollapsed();
+    var aiSummaries = triageGetAiSummaries();
+    var now = Date.now();
+
+    // Clean up expired snoozes
+    var snoozedChanged = false;
+    Object.keys(snoozed).forEach(function(id) {
+      if (snoozed[id] <= now) { delete snoozed[id]; snoozedChanged = true; }
+    });
+    if (snoozedChanged) triageSaveMap(triageKey('snoozed'), snoozed);
+
+    function isHidden(id) {
+      if (!triageState.showCompleted && completed.has(id)) return true;
+      if (snoozed[id] && snoozed[id] > now) return true;
+      return false;
+    }
+
+    var cols = [
+      { key:'urgent',    icon:'&#128308;', title:'Urgent',        countBg:'#fee2e2', countColor:'#991b1b', itemBg:'#fff5f5', border:'#fecaca' },
+      { key:'action',    icon:'&#128992;', title:'Action Needed', countBg:'#fff7ed', countColor:'#c2410c', itemBg:'#fff7ed', border:'#fed7aa' },
+      { key:'mentioned', icon:'&#128993;', title:'Mentioned',     countBg:'#fefce8', countColor:'#854d0e', itemBg:'#fefce8', border:'#fde047' },
+      { key:'fyi',       icon:'&#128309;', title:'FYI',           countBg:'#eff6ff', countColor:'#1d4ed8', itemBg:'#eff6ff', border:'#bfdbfe' },
+      { key:'automated', icon:'&#9881;',   title:'Automated',     countBg:'#f3f4f6', countColor:'#374151', itemBg:'#f9fafb', border:'#e5e7eb' },
+      { key:'marketing', icon:'&#128226;', title:'Marketing',     countBg:'#faf5ff', countColor:'#7e22ce', itemBg:'#faf5ff', border:'#e9d5ff' },
+    ];
+
+    var visibleCounts = {};
+    cols.forEach(function(c) {
+      visibleCounts[c.key] = (triageState.buckets[c.key] || []).filter(function(it) { return !isHidden(it.id); }).length;
+    });
+    var needAttention = visibleCounts.urgent + visibleCounts.action + visibleCounts.mentioned;
+    badge.textContent = needAttention ? (needAttention + ' need attention') : 'All clear';
+    badge.style.background = visibleCounts.urgent ? '#fee2e2' : (needAttention ? '#fef3c7' : '#d1fae5');
+    badge.style.color      = visibleCounts.urgent ? '#991b1b' : (needAttention ? '#92400e' : '#065f46');
+
+    var gridHtml = '<div class="triage-grid">';
+    cols.forEach(function(col) {
+      var allItems = triageState.buckets[col.key] || [];
+      var items = allItems.filter(function(it) { return !isHidden(it.id); });
+      var isCollapsed = collapsed.has(col.key);
+      gridHtml += '<div class="triage-col' + (isCollapsed ? ' collapsed' : '') + '" data-col="' + col.key + '" ' +
+        'ondragover="onTriageColumnDragOver(event)" ondragleave="onTriageColumnDragLeave(event)" ' +
+        'ondrop="onTriageColumnDrop(event,\'' + col.key + '\')">';
+      gridHtml += '<div class="triage-col-header" onclick="toggleTriageColumn(\'' + col.key + '\')">';
+      gridHtml += '<span>' + col.icon + '</span>';
+      gridHtml += '<span class="triage-col-title" style="color:' + col.countColor + '">' + col.title + '</span>';
+      gridHtml += '<span class="triage-col-count" style="background:' + col.countBg + ';color:' + col.countColor + '">' + items.length + '</span>';
+      gridHtml += '<span class="triage-col-chevron">&#9662;</span>';
+      gridHtml += '</div>';
+      gridHtml += '<div class="triage-col-body">';
+      if (items.length === 0) {
+        gridHtml += '<div class="triage-empty">Nothing here &#10003;</div>';
+      } else {
+        items.forEach(function(item) {
+          var isDone = completed.has(item.id);
+          var summaryText = aiSummaries[item.id] || item.summary;
+          var summaryClass = aiSummaries[item.id] ? 'triage-summary ai' : 'triage-summary';
+          var opacity = isDone ? '0.55' : '1';
+          var textDecoration = isDone ? 'line-through' : 'none';
+          var isPinned = !!triageGetPinned()[item.id];
+          gridHtml += '<div class="triage-item" data-id="' + escapeHtml(item.id) + '" draggable="true" ' +
+            'ondragstart="onTriageDragStart(event,\'' + escapeHtml(item.id) + '\')" ' +
+            'style="background:' + col.itemBg + ';border-color:' + col.border + ';opacity:' + opacity + ';" ' +
+            'onclick="openTriageItem(\'' + escapeHtml(item.threadId) + '\', event)" ' +
+            'title="' + (isPinned ? 'Pinned here — drag to move' : 'Drag to move · click to open in Gmail') + '">';
+          gridHtml += '<div class="triage-actions" onclick="event.stopPropagation()">';
+          gridHtml += '<button class="ai-btn" title="AI summarize" onclick="aiSummarizeItem(\'' + escapeHtml(item.id) + '\', this)">&#10024;</button>';
+          gridHtml += '<button class="snooze-btn" title="Snooze" onclick="showSnoozeMenu(\'' + escapeHtml(item.id) + '\', this, event)">&#9200;</button>';
+          gridHtml += '<button class="archive-btn" title="Archive in Gmail" onclick="archiveTriageItem(\'' + escapeHtml(item.id) + '\', this)">&#128451;</button>';
+          gridHtml += '<button class="complete-btn" title="' + (isDone ? 'Mark as not complete' : 'Mark complete') + '" onclick="toggleTriageComplete(\'' + escapeHtml(item.id) + '\')">' + (isDone ? '&#10226;' : '&#10003;') + '</button>';
+          gridHtml += '</div>';
+          gridHtml += '<div class="triage-sender" style="text-decoration:' + textDecoration + '">' + escapeHtml(item.from) + (isPinned ? '<span class="triage-pinned-dot" title="Manually moved"></span>' : '') + '</div>';
+          gridHtml += '<div class="triage-subject" style="text-decoration:' + textDecoration + '">' + escapeHtml(item.subject) + '</div>';
+          gridHtml += '<div class="' + summaryClass + '">' + escapeHtml(summaryText) + '</div>';
+          gridHtml += '</div>';
+        });
+      }
+      gridHtml += '</div></div>';
+    });
+    gridHtml += '</div>';
+
+    var lastRun = triageState.lastRunAt ? triageState.lastRunAt.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true }) : '--';
+    var completedCount = completed.size;
+    var completedPill = completedCount > 0
+      ? '<button class="triage-completed-pill" onclick="toggleShowCompleted()">' +
+        (triageState.showCompleted ? '&#128065; Hiding done' : '&#10003; ' + completedCount + ' done') + '</button>'
+      : '';
+
+    container.innerHTML =
+      '<div style="padding:8px 18px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">' +
+      '<span>Last triaged: ' + lastRun + ' &middot; ' + triageState.scannedCount + ' emails scanned</span>' +
+      '<div style="display:flex;gap:8px;align-items:center;">' + completedPill +
+      '<button onclick="runInboxTriage()" style="font-size:11px;padding:2px 10px;border-radius:5px;cursor:pointer;border:1px solid var(--border);background:var(--primary-light);color:var(--primary-dark);font-family:inherit;font-weight:600;">&#8635; Refresh</button>' +
+      '</div></div>' + gridHtml;
+  }
+
+  // ============================================================
+  // CARD ACTIONS
+  // ============================================================
+  function openTriageItem(threadId, ev) {
+    if (ev && (ev.target.closest('.triage-actions') || ev.target.closest('.triage-snooze-menu'))) return;
+    window.open('https://mail.google.com/mail/u/0/#inbox/' + encodeURIComponent(threadId), '_blank', 'noopener');
+  }
+
+  function toggleTriageColumn(key) {
+    var collapsed = triageGetCollapsed();
+    if (collapsed.has(key)) collapsed.delete(key); else collapsed.add(key);
+    triageSaveSet(triageKey('collapsed'), collapsed);
+    renderTriage();
+  }
+
+  function toggleTriageComplete(id) {
+    var completed = triageGetCompleted();
+    if (completed.has(id)) { completed.delete(id); showToast('Marked not complete'); }
+    else                   { completed.add(id);    showToast('Marked complete'); }
+    triageSaveSet(triageKey('completed'), completed);
+    renderTriage();
+  }
+
+  function toggleShowCompleted() {
+    triageState.showCompleted = !triageState.showCompleted;
+    renderTriage();
+  }
+
+  // ============================================================
+  // DRAG AND DROP
+  // ============================================================
+  var _dragId = null;
+  var _dragSrcCol = null;
+
+  function onTriageDragStart(event, id) {
+    _dragId = id;
+    _dragSrcCol = null;
+    for (var k in triageState.buckets) {
+      if ((triageState.buckets[k] || []).some(function(it) { return it.id === id; })) {
+        _dragSrcCol = k; break;
+      }
+    }
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', id);
+    setTimeout(function() {
+      var el = document.querySelector('.triage-item[data-id="' + id + '"]');
+      if (el) el.classList.add('dragging');
+    }, 0);
+  }
+
+  function onTriageColumnDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    event.currentTarget.classList.add('drag-over');
+  }
+
+  function onTriageColumnDragLeave(event) {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      event.currentTarget.classList.remove('drag-over');
+    }
+  }
+
+  function onTriageColumnDrop(event, targetColKey) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('drag-over');
+    var id = _dragId;
+    _dragId = null;
+    if (!id || _dragSrcCol === targetColKey) return;
+
+    var pinned = triageGetPinned();
+    pinned[id] = targetColKey;
+    triageSavePinned(pinned);
+
+    var moved = null;
+    triageState.buckets[_dragSrcCol] = (triageState.buckets[_dragSrcCol] || []).filter(function(it) {
+      if (it.id === id) { moved = it; return false; }
+      return true;
+    });
+    if (moved) {
+      if (!triageState.buckets[targetColKey]) triageState.buckets[targetColKey] = [];
+      triageState.buckets[targetColKey].push(moved);
+    }
+    _dragSrcCol = null;
+    renderTriage();
+  }
+
+  // ============================================================
+  // ARCHIVE (Gmail API)
+  // ============================================================
+  async function archiveTriageItem(id, btnEl) {
+    if (!googleSession.connected || !googleSession.accessToken) { showToast('Sign in first.'); return; }
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
+    try {
+      var r = await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/' + encodeURIComponent(id) + '/modify', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + googleSession.accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ removeLabelIds: ['INBOX'] })
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (triageState.buckets) {
+        Object.keys(triageState.buckets).forEach(function(k) {
+          triageState.buckets[k] = triageState.buckets[k].filter(function(it) { return it.id !== id; });
+        });
+      }
+      showToast('Archived');
+      renderTriage();
+    } catch (err) {
+      showToast('Archive failed: ' + err.message);
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = '🗃'; }
+    }
+  }
+
+  // ============================================================
+  // SNOOZE
+  // ============================================================
+  function showSnoozeMenu(id, btnEl, ev) {
+    if (ev) ev.stopPropagation();
+    document.querySelectorAll('.triage-snooze-menu').forEach(function(m) { m.remove(); });
+    var menu = document.createElement('div');
+    menu.className = 'triage-snooze-menu';
+    var options = [
+      { label: '1 hour',       ms: 60 * 60 * 1000 },
+      { label: 'Tomorrow 9am', ms: msUntilTomorrow9am() },
+      { label: 'Next Monday',  ms: msUntilNextMonday9am() },
+    ];
+    options.forEach(function(o) {
+      var b = document.createElement('button');
+      b.textContent = o.label;
+      b.onclick = function(e) {
+        e.stopPropagation();
+        snoozeTriageItem(id, Date.now() + o.ms);
+        menu.remove();
+      };
+      menu.appendChild(b);
+    });
+    var item = btnEl.closest('.triage-item');
+    if (item) item.appendChild(menu);
+    setTimeout(function() {
+      document.addEventListener('click', function onDoc(e) {
+        if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', onDoc); }
+      });
+    }, 0);
+  }
+
+  function msUntilTomorrow9am() {
+    var d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0);
+    return d.getTime() - Date.now();
+  }
+  function msUntilNextMonday9am() {
+    var d = new Date();
+    var day = d.getDay();
+    var addDays = (8 - day) % 7; if (addDays === 0) addDays = 7;
+    d.setDate(d.getDate() + addDays); d.setHours(9, 0, 0, 0);
+    return d.getTime() - Date.now();
+  }
+  function snoozeTriageItem(id, untilTs) {
+    var snoozed = triageGetSnoozed();
+    snoozed[id] = untilTs;
+    triageSaveMap(triageKey('snoozed'), snoozed);
+    showToast('Snoozed until ' + new Date(untilTs).toLocaleString());
+    renderTriage();
+  }
+
+  // ============================================================
+  // AI SUMMARIZE (OpenAI — client-side for now)
+  // For v1.1, move this to /api/triage/summarize on the backend so
+  // you can use a shared org key and centralise prompt tuning.
+  // ============================================================
+  async function aiSummarizeItem(id, btnEl) {
+    var apiKey = localStorage.getItem(OPENAI_KEY_KEY);
+    if (!apiKey) {
+      apiKey = prompt('Enter your OpenAI API key (stored locally in this browser):');
+      if (!apiKey) return;
+      localStorage.setItem(OPENAI_KEY_KEY, apiKey.trim());
+    }
+    if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '<span class="ai-spinner"></span>'; }
+    try {
+      var bodyText = await fetchMessageBody(id);
+      var resp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: 'You summarize emails in one concise sentence (max 25 words), followed by the suggested next action in parentheses if any. No preamble.' },
+            { role: 'user', content: bodyText.substring(0, 6000) }
+          ],
+          temperature: 0.2,
+          max_tokens: 120,
+        })
+      });
+      if (!resp.ok) {
+        var errBody = await resp.text();
+        throw new Error('OpenAI ' + resp.status + ': ' + errBody.substring(0, 200));
+      }
+      var data = await resp.json();
+      var summary = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim();
+      if (!summary) throw new Error('Empty response');
+      var aiSummaries = triageGetAiSummaries();
+      aiSummaries[id] = summary;
+      triageSaveMap(triageKey('aiSummaries'), aiSummaries);
+      showToast('Summary ready');
+      renderTriage();
+    } catch (err) {
+      showToast('AI failed: ' + err.message);
+      if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '&#10024;'; }
+    }
+  }
+
+  async function fetchMessageBody(id) {
+    var r = await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/' + encodeURIComponent(id) + '?format=full',
+      { headers: { Authorization: 'Bearer ' + googleSession.accessToken } });
+    if (!r.ok) throw new Error('Gmail body fetch failed: ' + r.status);
+    var msg = await r.json();
+    var subj = '', from = '';
+    if (msg.payload && msg.payload.headers) {
+      msg.payload.headers.forEach(function(h) {
+        if (h.name.toLowerCase() === 'subject') subj = h.value;
+        if (h.name.toLowerCase() === 'from') from = h.value;
+      });
+    }
+    function walk(part) {
+      if (!part) return '';
+      var out = '';
+      if (part.mimeType === 'text/plain' && part.body && part.body.data) {
+        out += decodeB64Url(part.body.data);
+      } else if (part.mimeType === 'text/html' && part.body && part.body.data) {
+        out += decodeB64Url(part.body.data).replace(/<[^>]+>/g, ' ');
+      }
+      if (part.parts) part.parts.forEach(function(p) { out += '\n' + walk(p); });
+      return out;
+    }
+    var body = walk(msg.payload) || msg.snippet || '';
+    body = body.replace(/\s+/g, ' ').trim();
+    return 'From: ' + from + '\nSubject: ' + subj + '\n\n' + body;
+  }
+</script>
+</body>
+</html>
